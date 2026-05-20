@@ -1,11 +1,19 @@
 import type { CollectionConfig } from 'payload'
 
 import {
+  BlockquoteFeature,
   BlocksFeature,
+  ChecklistFeature,
+  EXPERIMENTAL_TableFeature,
   FixedToolbarFeature,
   HeadingFeature,
   HorizontalRuleFeature,
   InlineToolbarFeature,
+  OrderedListFeature,
+  RelationshipFeature,
+  TextStateFeature,
+  UnorderedListFeature,
+  UploadFeature,
   lexicalEditor,
 } from '@payloadcms/richtext-lexical'
 
@@ -73,10 +81,36 @@ export const Posts: CollectionConfig<'posts'> = {
                   return [
                     ...rootFeatures,
                     HeadingFeature({ enabledHeadingSizes: ['h1', 'h2', 'h3', 'h4'] }),
+                    BlockquoteFeature(),
+                    UnorderedListFeature(),
+                    OrderedListFeature(),
+                    ChecklistFeature(),
+                    UploadFeature({
+                      collections: {
+                        media: {
+                          fields: [
+                            {
+                              name: 'caption',
+                              type: 'text',
+                            },
+                          ],
+                        },
+                      },
+                    }),
+                    RelationshipFeature({ enabledCollections: ['posts', 'categories'] }),
+                    EXPERIMENTAL_TableFeature(),
+                    TextStateFeature({
+                      state: {
+                        color: {
+                          accent: { label: 'Accent', css: { color: 'var(--accent)' } },
+                          muted: { label: 'Muted', css: { color: 'var(--ink-soft)' } },
+                        },
+                      },
+                    }),
                     BlocksFeature({ blocks: [Banner, Code, MediaBlock] }),
+                    HorizontalRuleFeature(),
                     FixedToolbarFeature(),
                     InlineToolbarFeature(),
-                    HorizontalRuleFeature(),
                   ]
                 },
               }),
