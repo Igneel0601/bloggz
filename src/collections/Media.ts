@@ -7,12 +7,15 @@ import {
 } from '@payloadcms/richtext-lexical'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import fs from 'node:fs/promises'
 
 import { anyone } from '../access/anyone'
 import { authenticated } from '../access/authenticated'
+import { syncMediaBlob } from '../utilities/mediaBlob'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
+const staticDir = path.resolve(dirname, '../../public/media')
 
 export const Media: CollectionConfig = {
   slug: 'media',
@@ -22,6 +25,26 @@ export const Media: CollectionConfig = {
     delete: authenticated,
     read: anyone,
     update: authenticated,
+  },
+  hooks: {
+    // After every upload, copy bytes from disk into the `media_blob` table
+    // so the portfolio's /api/bloggz-media route can serve them without
+    // Bloggz running. The local disk file remains as the source of truth
+    // during the Bloggz dev session.
+    afterChange: [
+      async ({ doc }) => {
+        if (!doc?.filename) return doc
+        try {
+          const data = await fs.readFile(path.join(staticDir, doc.filename))
+          await syncMediaBlob(doc.filename, data, doc.mimeType ?? 'application/octet-stream')
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+            console.error('[media_blob] sync failed', doc.filename, err)
+          }
+        }
+        return doc
+      },
+    ],
   },
   fields: [
     {
@@ -41,7 +64,7 @@ export const Media: CollectionConfig = {
   ],
   upload: {
     // Upload to the public/media directory in Next.js making them publicly accessible even outside of Payload
-    staticDir: path.resolve(dirname, '../../public/media'),
+    staticDir,
     adminThumbnail: 'thumbnail',
     focalPoint: true,
     imageSizes: [

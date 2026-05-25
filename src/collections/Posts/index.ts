@@ -180,6 +180,15 @@ export const Posts: CollectionConfig<'posts'> = {
       ],
     },
     {
+      name: 'dropCap',
+      type: 'checkbox',
+      defaultValue: false,
+      admin: {
+        position: 'sidebar',
+        description: 'Drop cap on the first paragraph (editorial flourish).',
+      },
+    },
+    {
       name: 'publishedAt',
       type: 'date',
       admin: {

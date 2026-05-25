@@ -168,6 +168,10 @@ export interface Post {
     image?: (number | null) | Media;
     description?: string | null;
   };
+  /**
+   * Drop cap on the first paragraph (editorial flourish).
+   */
+  dropCap?: boolean | null;
   publishedAt?: string | null;
   authors?: (number | User)[] | null;
   populatedAuthors?:
@@ -540,6 +544,7 @@ export interface PostsSelect<T extends boolean = true> {
         image?: T;
         description?: T;
       };
+  dropCap?: T;
   publishedAt?: T;
   authors?: T;
   populatedAuthors?:
