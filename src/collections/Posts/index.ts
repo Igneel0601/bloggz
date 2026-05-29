@@ -23,7 +23,7 @@ import { Banner } from '../../blocks/Banner/config'
 import { Code } from '../../blocks/Code/config'
 import { MediaBlock } from '../../blocks/MediaBlock/config'
 import { populateAuthors } from './hooks/populateAuthors'
-import { revalidatePortfolio } from './hooks/revalidatePortfolio'
+import { revalidatePortfolio, revalidatePortfolioOnDelete } from './hooks/revalidatePortfolio'
 
 import {
   MetaDescriptionField,
@@ -247,6 +247,7 @@ export const Posts: CollectionConfig<'posts'> = {
   hooks: {
     afterRead: [populateAuthors],
     afterChange: [revalidatePortfolio],
+    afterDelete: [revalidatePortfolioOnDelete],
   },
   versions: {
     drafts: {
