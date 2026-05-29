@@ -175,6 +175,8 @@ const banner = (style: string, bodyLines: string[]) => {
   }
 }
 // Link node uses version 3 (matches editor output); plain `el` would emit v1.
+// External (http/https) links open in a new tab so source citations don't
+// navigate the reader away; internal/relative links stay in the same tab.
 const link = (url: string, children: unknown[]) => ({
   type: 'link',
   format: '',
@@ -182,7 +184,7 @@ const link = (url: string, children: unknown[]) => ({
   version: 3,
   direction: 'ltr',
   children,
-  fields: { url, newTab: false, linkType: 'custom' },
+  fields: { url, newTab: /^https?:\/\//.test(url), linkType: 'custom' },
 })
 const root = (children: unknown[]) => ({
   type: 'root',
@@ -419,15 +421,16 @@ async function main() {
   const slug = (fm.slug as string) || slugify(title || path.basename(file, '.md'))
   const description = (fm.description as string) ?? undefined
   const dropCap = fm.drop_cap === true
-  const willPublish = publish || fm.status === 'published'
-  const tags = Array.isArray(fm.tags) ? (fm.tags as string[]) : []
+  const willPublish = publish // routine always drafts; --publish overrides
+  const category = typeof fm.category === 'string' ? fm.category.trim() : ''
+  const publishedAt = fm.date ? new Date(String(fm.date)).toISOString() : undefined
   const content = { root: markdownToLexical(body.trim()) }
 
   if (!title) { console.error('ERROR: frontmatter is missing `title`.'); process.exit(1) }
 
   if (dryRun) {
     console.log('=== FIELD MAPPING (dry-run, no DB) ===')
-    console.log({ title, slug, description, dropCap, _status: willPublish ? 'published' : 'draft', tags })
+    console.log({ title, slug, description, dropCap, _status: willPublish ? 'published' : 'draft', category, publishedAt })
     console.log('\n=== LEXICAL ===')
     console.log(JSON.stringify(content, null, 2))
     console.log(`\n(${content.root.children.length} top-level blocks)`)
@@ -439,10 +442,10 @@ async function main() {
   // resolve image placeholders: download each ![](url) and upload to media
   content.root = await resolveNode(content.root, payload)
 
-  // tags -> categories (find-or-create) -> ids
+  // category (find-or-create) -> single id
   const categoryIds: number[] = []
-  for (const tag of tags) {
-    const catSlug = slugify(tag)
+  if (category) {
+    const catSlug = slugify(category)
     const found = await payload.find({
       collection: 'categories',
       where: { slug: { equals: catSlug } },
@@ -452,7 +455,7 @@ async function main() {
     else {
       const created = await payload.create({
         collection: 'categories',
-        data: { title: tag, slug: catSlug },
+        data: { title: category, slug: catSlug },
       })
       categoryIds.push(created.id as number)
     }
@@ -464,8 +467,11 @@ async function main() {
     content,
     dropCap,
     categories: categoryIds,
-    meta: { description },
+    // set meta.title explicitly so Payload's SEO plugin doesn't auto-generate a
+    // doubled "Title Title"
+    meta: { title, description },
     _status: willPublish ? 'published' : 'draft',
+    ...(publishedAt ? { publishedAt } : {}),
   }
 
   const existing = await payload.find({
