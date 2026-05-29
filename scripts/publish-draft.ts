@@ -423,6 +423,7 @@ async function main() {
   const dropCap = fm.drop_cap === true
   const willPublish = publish // routine always drafts; --publish overrides
   const category = typeof fm.category === 'string' ? fm.category.trim() : ''
+  const authorName = (fm.author as string)?.trim() || 'Vaibhav Verma'
   const publishedAt = fm.date ? new Date(String(fm.date)).toISOString() : undefined
   const content = { root: markdownToLexical(body.trim()) }
 
@@ -461,11 +462,22 @@ async function main() {
     }
   }
 
+  // author (frontmatter name) -> user id
+  const authorIds: number[] = []
+  const foundUser = await payload.find({
+    collection: 'users',
+    where: { name: { equals: authorName } },
+    limit: 1,
+  })
+  if (foundUser.docs.length) authorIds.push(foundUser.docs[0].id as number)
+  else console.warn(`  author "${authorName}" not found in users — leaving authors empty`)
+
   const data: Record<string, unknown> = {
     title,
     slug,
     content,
     dropCap,
+    authors: authorIds,
     categories: categoryIds,
     // set meta.title explicitly so Payload's SEO plugin doesn't auto-generate a
     // doubled "Title Title"
