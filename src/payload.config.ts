@@ -55,6 +55,10 @@ export default buildConfig({
   // This config helps us configure global or default features that the other editors can inherit
   editor: defaultLexical,
   db: postgresAdapter({
+    // Dev push is disabled: drizzle's auto-sync would try to DROP any table it
+    // doesn't manage (e.g. our custom `media_blob`), risking data loss against
+    // the prod Neon DB. Schema changes go through generated migrations instead.
+    push: false,
     pool: {
       connectionString: process.env.DATABASE_URL || '',
     },
