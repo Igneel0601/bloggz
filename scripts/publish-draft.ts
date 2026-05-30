@@ -196,6 +196,68 @@ const root = (children: unknown[]) => ({
 })
 
 // ---------------------------------------------------------------------------
+// Link gate — extract every http(s) URL from the Markdown source and probe it
+// before any DB write. The routines generate citation URLs from the model's
+// knowledge and do NOT fetch them, so a plausible-but-wrong slug (e.g. a guessed
+// /blog/<slug>) can sail through. This is the one chokepoint every post passes
+// through, so we check here. Classification:
+//   ok      2xx/3xx                  -> fine
+//   dead    404/410 + other 4xx      -> hard fail (bad URL)
+//   blocked 401/403/429              -> warn only (bot/auth/rate-limit, can't tell)
+//   skipped 5xx / network / timeout  -> warn only (transient)
+// HEAD first; some servers reject HEAD, so fall back to GET on 405/501.
+type LinkResult = { url: string; status: number | string; kind: 'ok' | 'dead' | 'blocked' | 'skipped' }
+
+async function probe(url: string): Promise<LinkResult> {
+  const hit = async (method: 'HEAD' | 'GET') => {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 8000)
+    try {
+      return await fetch(url, {
+        method,
+        redirect: 'follow',
+        signal: ctrl.signal,
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; blogs-publish-draft/1.0)' },
+      })
+    } finally {
+      clearTimeout(t)
+    }
+  }
+  try {
+    let res = await hit('HEAD')
+    if (res.status === 405 || res.status === 501) res = await hit('GET')
+    const s = res.status
+    if (s < 400) return { url, status: s, kind: 'ok' }
+    if (s === 401 || s === 403 || s === 429) return { url, status: s, kind: 'blocked' }
+    if (s >= 500) return { url, status: s, kind: 'skipped' }
+    return { url, status: s, kind: 'dead' }
+  } catch (e) {
+    return { url, status: (e as Error).name === 'AbortError' ? 'timeout' : 'network', kind: 'skipped' }
+  }
+}
+
+// Returns true if every link is publishable (no dead links). Prints a report.
+async function checkLinks(body: string): Promise<boolean> {
+  const urls = [...new Set([...body.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)].map((m) => m[1]))]
+  if (!urls.length) {
+    console.log('Link check: no http(s) links found.')
+    return true
+  }
+  console.log(`Link check: probing ${urls.length} link(s)...`)
+  const results = await Promise.all(urls.map(probe))
+  for (const r of results) {
+    const tag = { ok: 'OK     ', dead: 'DEAD   ', blocked: 'BLOCKED', skipped: 'SKIP   ' }[r.kind]
+    console.log(`  [${tag}] ${r.status}  ${r.url}`)
+  }
+  const dead = results.filter((r) => r.kind === 'dead')
+  if (dead.length) {
+    console.error(`\n${dead.length} dead link(s) — fix the Markdown before publishing, or pass --skip-link-check to override.`)
+    return false
+  }
+  return true
+}
+
+// ---------------------------------------------------------------------------
 // Inline parser — `code`, **bold**, *italic*/_italic_, ~~strike~~, [t](url).
 // ---------------------------------------------------------------------------
 function parseInline(str: string, base = 0): unknown[] {
@@ -409,9 +471,10 @@ async function main() {
   const args = process.argv.slice(2)
   const dryRun = args.includes('--dry-run')
   const publish = args.includes('--publish')
+  const skipLinkCheck = args.includes('--skip-link-check')
   const file = args.find((a) => !a.startsWith('--'))
   if (!file) {
-    console.error('Usage: pnpm publish-draft <file.md> [--dry-run] [--publish]')
+    console.error('Usage: pnpm publish-draft <file.md> [--dry-run] [--publish] [--skip-link-check]')
     process.exit(1)
   }
 
@@ -428,6 +491,11 @@ async function main() {
   const content = { root: markdownToLexical(body.trim()) }
 
   if (!title) { console.error('ERROR: frontmatter is missing `title`.'); process.exit(1) }
+
+  if (!skipLinkCheck) {
+    const ok = await checkLinks(body)
+    if (!ok && !dryRun) process.exit(1)
+  }
 
   if (dryRun) {
     console.log('=== FIELD MAPPING (dry-run, no DB) ===')
